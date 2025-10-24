@@ -12,6 +12,10 @@ app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(bodyParser.json({ limit: "1mb" }));
 
+app.get("/api/plan", (req, res) => {
+  res.json({ message: "API działa poprawnie 🚀" });
+});
+
 const PORT = process.env.PORT || 5000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
