@@ -693,7 +693,6 @@ app.get("/api/plan", (req, res) => {
   res.json({ message: "API działa poprawnie 🚀" });
 });
 
-
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
