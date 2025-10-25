@@ -736,55 +736,8 @@ app.post("/api/plan", async (req, res) => {
   }
 });
 
-/* ========== START SERVER ========== */
-app.listen(PORT, () => console.log(`✅ Server działa na porcie ${PORT}`));
-
-
-    // Kontekst czasu (serwer -> do promptu)
-    const now = new Date();
-    const localDate = new Intl.DateTimeFormat("pl-PL", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(now);
-    const utcDate = now.toISOString().replace("T", " ").replace(".000Z", "Z");
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-
-    // Kalendarz / event
-    const eventDt = parseISODate(req.body?.eventDate);
-    const eventDiff = eventDt
-      ? diffFromNow(eventDt)
-      : { days: 0, weeks: 0, months: 0 };
-
-    // === ETAP 1: draft ===
-    const draftPrompt = buildDietPrompt(req.body || {}, {
-      now: { localDate, utcDate, tz },
-      event: { has: !!eventDt, ...eventDiff },
-    });
-    const draftRes = await callGemini(draftPrompt, { retries: 1 });
-    if (!draftRes.ok) {
-      return res
-        .status(500)
-        .json({ ok: false, error: "Błąd w etapie 1: " + draftRes.error, raw: draftRes.raw });
-    }
-
-    // === ETAP 2: audyt ===
-    const auditPrompt = buildAuditPrompt(draftRes.text, req.body || {}, {
-      now: { localDate, utcDate, tz },
-      event: { has: !!eventDt, ...eventDiff },
-    });
-    const finalRes = await callGemini(auditPrompt, { retries: 1 });
-    if (!finalRes.ok) {
-      return res
-        .status(500)
-        .json({ ok: false, error: "Błąd w etapie 2: " + finalRes.error, raw: finalRes.raw });
-    }
 
     
-
-
 /* ========== start ========== */
 app.listen(PORT, () => {
   console.log(
