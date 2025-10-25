@@ -691,19 +691,19 @@ app.get("/health", (_req, res) => {
   });
 });
 
-/* ========== ENDPOINT API PLAN ========== */
+/* ========= ENDPOINT API PLAN ========= */
 app.post("/api/plan", async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ ok: false, error: "Brak GEMINI_API_KEY w .env" });
     }
 
-    const { form } = req.body;
+    const form = req.body;
     if (!form) {
       return res.status(400).json({ ok: false, error: "Brak danych formularza" });
     }
 
-    // 🕒 Kontekst czasu i wydarzenia
+    // --- Kontekst czasu i wydarzenia ---
     const now = new Date();
     const ctx = {
       now: {
@@ -713,34 +713,29 @@ app.post("/api/plan", async (req, res) => {
       },
     };
 
-    // 🧠 Budowanie promptu
+    // --- Budowanie promptu ---
     const prompt = buildDietPrompt(form, ctx);
 
     console.log("=== Gemini prompt start ===");
     console.log(prompt.substring(0, 500) + "...");
     console.log("=== Gemini prompt end ===");
 
-    // 🔮 Wywołanie modelu
+    // --- Wywołanie modelu ---
     const aiRes = await callGemini(prompt, { retries: 2 });
-
     if (!aiRes.ok) {
-      console.error("❌ Błąd Gemini:", aiRes.error);
+      console.error("✖ Błąd Gemini:", aiRes.error);
       return res.status(500).json({ ok: false, error: aiRes.error });
     }
 
-    // ✅ Sukces
-    res.json({ ok: true, plan: aiRes.text });
+    // --- Sukces ---
+    return res.json({ ok: true, plan: aiRes.text });
   } catch (err) {
-    console.error("❌ Błąd /api/plan:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("✖ Błąd /api/plan:", err);
+    return res.status(500).json({ ok: false, error: err.message });
   }
-});
+}); // ✅ To zamyka app.post
 
-
-    
-/* ========== start ========== */
+/* ========= start ========= */
 app.listen(PORT, () => {
-  console.log(
-    `[FortiFit] Backend działa na http://localhost:${PORT} (model: ${GEMINI_MODEL})`
-  );
+  console.log(`[FortiFit] Backend działa na http://localhost:${PORT} (model: ${GEMINI_MODEL})`);
 });
