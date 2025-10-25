@@ -4,6 +4,7 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -17,7 +18,12 @@ const PORT = process.env.PORT || 5000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
 
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || "gemini-2.5-pro" });
+
+
 /* ========== helpers ========== */
+
 const fmt = (v, fb = "brak") =>
   v === undefined || v === null || String(v).trim() === "" ? fb : String(v).trim();
 
@@ -50,6 +56,25 @@ function diffFromNow(toDate) {
   };
 }
 
+async function callGemini(prompt, { retries = 1 } = {}) {
+  let lastErr = null;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const result = await model.generateContent(prompt);
+      const text = await result.response.text();
+      if (text) return { ok: true, text };
+    } catch (err) {
+      console.error(`❌ Błąd Gemini (próba ${attempt}):`, err.message);
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+    }
+  }
+
+  return { ok: false, error: lastErr?.message || "Nieznany błąd Gemini" };
+}
 /* ========== prompt builder (draft) ========== */
 function buildDietPrompt(form = {}, ctx = {}) {
   const {
@@ -649,44 +674,8 @@ Nigdy nie pisz, że poprawiasz czy przepraszasz. Oddaj od razu gotowy, poprawion
 `;
 }
 
-/* ========== Gemini call ========== */
-async function callGemini(prompt, { retries = 1 } = {}) {
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/` +
-    `${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
 
-  const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    // generationConfig: { temperature: 0.7, maxOutputTokens: 36000 },
-  };
 
-  let lastErr = null;
-  for (let attempt = 1; attempt <= retries + 1; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    let data = null;
-    try {
-      data = await res.json();
-    } catch (_) {}
-
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ??
-      data?.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data;
-
-    if (text) return { ok: true, text };
-
-    const errMsg =
-      data?.promptFeedback?.blockReason ||
-      data?.error?.message ||
-      `HTTP ${res.status}`;
-    lastErr = { errMsg, raw: data };
-    if (attempt <= retries) await new Promise((r) => setTimeout(r, 600));
-  }
-  return { ok: false, error: lastErr?.errMsg || "unknown", raw: lastErr?.raw };
-}
 
 /* ========== API ========== */
 app.get("/api/plan", (req, res) => {
@@ -702,11 +691,54 @@ app.get("/health", (_req, res) => {
   });
 });
 
+/* ========== ENDPOINT API PLAN ========== */
 app.post("/api/plan", async (req, res) => {
   try {
-    if (!GEMINI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ ok: false, error: "Brak GEMINI_API_KEY w .env" });
     }
+
+    const { form } = req.body;
+    if (!form) {
+      return res.status(400).json({ ok: false, error: "Brak danych formularza" });
+    }
+
+    // 🕒 Kontekst czasu i wydarzenia
+    const now = new Date();
+    const ctx = {
+      now: {
+        localDate: now.toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" }),
+        utcDate: now.toISOString(),
+        tz: "Europe/Warsaw",
+      },
+    };
+
+    // 🧠 Budowanie promptu
+    const prompt = buildDietPrompt(form, ctx);
+
+    console.log("=== Gemini prompt start ===");
+    console.log(prompt.substring(0, 500) + "...");
+    console.log("=== Gemini prompt end ===");
+
+    // 🔮 Wywołanie modelu
+    const aiRes = await callGemini(prompt, { retries: 2 });
+
+    if (!aiRes.ok) {
+      console.error("❌ Błąd Gemini:", aiRes.error);
+      return res.status(500).json({ ok: false, error: aiRes.error });
+    }
+
+    // ✅ Sukces
+    res.json({ ok: true, plan: aiRes.text });
+  } catch (err) {
+    console.error("❌ Błąd /api/plan:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/* ========== START SERVER ========== */
+app.listen(PORT, () => console.log(`✅ Server działa na porcie ${PORT}`));
+
 
     // Kontekst czasu (serwer -> do promptu)
     const now = new Date();
@@ -750,12 +782,8 @@ app.post("/api/plan", async (req, res) => {
         .json({ ok: false, error: "Błąd w etapie 2: " + finalRes.error, raw: finalRes.raw });
     }
 
-    res.json({ ok: true, plan: finalRes.text });
-  } catch (err) {
-    console.error("❌ /api/plan error:", err);
-    res.status(500).json({ ok: false, error: err.message || "Internal error" });
-  }
-});
+    
+
 
 /* ========== start ========== */
 app.listen(PORT, () => {
